@@ -57,17 +57,30 @@ export function writeData(filename, data) {
 let tokenCache = null;
 
 function getWempAccount() {
+  // 1. 优先从 openclaw.json 的 skills.entries.wemp-operator.env 读取
   const configPath = join(homedir(), '.openclaw', 'openclaw.json');
   if (existsSync(configPath)) {
     try {
       const config = JSON.parse(readFileSync(configPath, 'utf-8'));
-      const wemp = config?.channels?.wemp;
-      if (wemp?.appId && wemp?.appSecret) {
-        return { appId: wemp.appId, appSecret: wemp.appSecret };
+      const wempEntry = config?.skills?.entries?.wemp_operator?.env || config?.skills?.entries?.['wemp-operator']?.env;
+      if (wempEntry?.WEMP_APP_ID && wempEntry?.WEMP_APP_SECRET) {
+        return { appId: wempEntry.WEMP_APP_ID, appSecret: wempEntry.WEMP_APP_SECRET };
       }
     } catch {}
   }
-  throw new Error('未找到公众号配置，请在 ~/.openclaw/openclaw.json 中配置 channels.wemp');
+  
+  // 2. 其次从技能目录下 config.json 读取
+  const skillConfigPath = join(SKILL_ROOT, 'config.json');
+  if (existsSync(skillConfigPath)) {
+    try {
+      const skillConfig = JSON.parse(readFileSync(skillConfigPath, 'utf-8'));
+      if (skillConfig?.appId && skillConfig?.appSecret) {
+        return { appId: skillConfig.appId, appSecret: skillConfig.appSecret };
+      }
+    } catch {}
+  }
+  
+  throw new Error('未找到公众号配置。请在 openclaw.json 的 skills.entries.wemp-operator.env 中配置 WEMP_APP_ID 和 WEMP_APP_SECRET');
 }
 
 async function getAccessToken() {
@@ -136,6 +149,23 @@ export async function getUpstreamMsgHour(date) {
 export async function addDraft(articles) {
   const data = await wechatApi('/cgi-bin/draft/add', { articles });
   return { mediaId: data.media_id };
+}
+
+export async function getDefaultThumbMediaId() {
+  // 获取一个默认的封面图媒体ID
+  try {
+    const data = await wechatApi('/cgi-bin/material/batchget_material', {
+      type: 'image',
+      offset: 0,
+      count: 1
+    });
+    if (data.item && data.item.length > 0) {
+      return data.item[0].media_id;
+    }
+  } catch (e) {
+    console.error('获取默认封面图失败:', e.message);
+  }
+  return '';
 }
 
 export async function updateDraft(mediaId, index, article) {

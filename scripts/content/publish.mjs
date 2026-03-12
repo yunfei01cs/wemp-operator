@@ -12,7 +12,9 @@ import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   loadConfig,
-  callWempScript,
+  addDraft,
+  publishDraft as publishDraftApi,
+  getPublishStatus,
   output,
   outputError,
   parseArgs,
@@ -66,16 +68,28 @@ async function createDraftFromFile(filePath) {
   console.error(`[发布] 创建草稿: ${title}`);
   console.error(`[发布] 摘要: ${digest.substring(0, 50)}...`);
   
-  // 调用 wemp skill 创建草稿
-  const result = await callWempScript('content.mjs', 'add-draft', {
+  // 获取一个默认封面图
+  let thumbMediaId = '';
+  try {
+    const { getDefaultThumbMediaId } = await import('../lib/utils.mjs');
+    thumbMediaId = await getDefaultThumbMediaId();
+  } catch (e) {
+    console.error(`[发布] 获取封面图失败: ${e.message}`);
+  }
+  
+  // 调用 API 创建草稿 - 需要正确的格式，包含必填的 thumb_media_id
+  const result = await addDraft([{
     title,
     content: body,
     author: author || '小澜',
     digest,
-  });
+    thumb_media_id: thumbMediaId,
+    need_open_comment: 0,
+    only_fans_can_comment: 0,
+  }]);
   
   return {
-    mediaId: result.media_id,
+    mediaId: result.mediaId,
     title,
     digest,
   };
@@ -87,9 +101,7 @@ async function createDraftFromFile(filePath) {
 async function publishDraft(mediaId) {
   console.error(`[发布] 发布草稿: ${mediaId}`);
   
-  const result = await callWempScript('content.mjs', 'publish', {
-    'media-id': mediaId,
-  });
+  const result = await publishDraftApi(mediaId);
   
   return {
     publishId: result.publish_id,
@@ -103,9 +115,8 @@ async function publishDraft(mediaId) {
 async function checkPublishStatus(publishId) {
   console.error(`[发布] 检查发布状态: ${publishId}`);
   
-  const result = await callWempScript('content.mjs', 'publish-status', {
-    'publish-id': publishId,
-  });
+  const { getPublishStatus } = await import('../lib/utils.mjs');
+  const result = await getPublishStatus(publishId);
   
   return result;
 }

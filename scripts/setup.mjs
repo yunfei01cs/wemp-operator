@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 /**
- * 环境检查脚本
+ * 环境检查和配置脚本
  */
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
+
+const __filename = fileURLToPath(import.meta.url);
+const __scriptDir = dirname(__filename);
+const SKILL_ROOT = join(__scriptDir, '..');
 
 const colors = {
   green: (s) => `\x1b[32m${s}\x1b[0m`,
@@ -19,22 +24,37 @@ function error(msg) { console.log(`${colors.red('✗')} ${msg}`); }
 function warn(msg) { console.log(`${colors.yellow('!')} ${msg}`); }
 function info(msg) { console.log(`${colors.cyan('→')} ${msg}`); }
 
+function saveConfig(appId, appSecret) {
+  const skillConfigPath = join(SKILL_ROOT, 'config.json');
+  const config = { appId, appSecret };
+  writeFileSync(skillConfigPath, JSON.stringify(config, null, 2));
+  success(`配置已保存到: ${skillConfigPath}`);
+}
+
 function checkWempConfig() {
-  const configPaths = [
-    join(homedir(), '.openclaw', 'openclaw.json'),
-    join(homedir(), '.openclaw', 'openclaw.yaml'),
-  ];
-  
-  for (const configPath of configPaths) {
-    if (existsSync(configPath)) {
-      try {
-        const content = readFileSync(configPath, 'utf-8');
-        if (content.includes('wemp') && content.includes('appId')) {
-          return { found: true, path: configPath };
-        }
-      } catch {}
-    }
+  // 1. 优先从 openclaw.json 的 skills.entries 读取
+  const configPath = join(homedir(), '.openclaw', 'openclaw.json');
+  if (existsSync(configPath)) {
+    try {
+      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      const wempEntry = config?.skills?.entries?.wemp_operator?.env || config?.skills?.entries?.['wemp-operator']?.env;
+      if (wempEntry?.WEMP_APP_ID && wempEntry?.WEMP_APP_SECRET) {
+        return { found: true, path: 'openclaw.json (skills.entries.wemp-operator.env)' };
+      }
+    } catch {}
   }
+  
+  // 2. 其次从技能目录下 config.json 读取
+  const skillConfigPath = join(SKILL_ROOT, 'config.json');
+  if (existsSync(skillConfigPath)) {
+    try {
+      const config = JSON.parse(readFileSync(skillConfigPath, 'utf-8'));
+      if (config?.appId && config?.appSecret) {
+        return { found: true, path: skillConfigPath };
+      }
+    } catch {}
+  }
+  
   return { found: false };
 }
 
@@ -49,7 +69,25 @@ async function testApi() {
 }
 
 async function main() {
-  const showHelp = process.argv.includes('--help') || process.argv.includes('-h');
+  
+  // 处理 --set 参数
+  const args = process.argv.slice(2);
+  const setIdx = args.indexOf('--set');
+  if (setIdx !== -1) {
+    let appId, appSecret;
+    for (let i = setIdx + 1; i < args.length; i++) {
+      if (args[i].startsWith('appId=')) appId = args[i].split('=')[1];
+      if (args[i].startsWith('appSecret=')) appSecret = args[i].split('=')[1];
+    }
+    if (!appId) appId = args[setIdx + 1];
+    if (!appSecret) appSecret = args[setIdx + 2];
+    if (appId && appSecret) {
+      saveConfig(appId, appSecret);
+      process.exit(0);
+    }
+  }
+
+  const showHelp = args.includes('--help') || process.argv.includes('-h');
   
   console.log(colors.bold('\n🔍 wemp-operator 环境检查\n'));
   console.log('─'.repeat(50));
@@ -63,7 +101,6 @@ async function main() {
     success(`配置文件: ${wempCheck.path}`);
   } else {
     error('未找到公众号配置');
-    info('需要在 ~/.openclaw/openclaw.json 中配置 appId/appSecret');
     allPassed = false;
   }
   
@@ -92,14 +129,20 @@ async function main() {
     console.log(`
 ${colors.bold('配置指南')}
 
-在 ${colors.cyan('~/.openclaw/openclaw.json')} 中添加：
+请在 openclaw.json 中配置（推荐方式）：
 
+文件位置: ${colors.cyan('~/.openclaw/openclaw.json')}
+
+在 skills.entries 下添加:
 {
-  "channels": {
-    "wemp": {
-      "enabled": true,
-      "appId": "你的公众号 AppID",
-      "appSecret": "你的公众号 AppSecret"
+  "skills": {
+    "entries": {
+      "wemp-operator": {
+        "env": {
+          "WEMP_APP_ID": "你的公众号 AppID",
+          "WEMP_APP_SECRET": "你的公众号 AppSecret"
+        }
+      }
     }
   }
 }

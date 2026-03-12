@@ -69,11 +69,14 @@ git clone https://github.com/IanShaw027/wemp-operator.git ~/.openclaw/skills/wem
 
 ```json
 {
-  "channels": {
-    "wemp": {
-      "enabled": true,
-      "appId": "你的公众号 AppID",
-      "appSecret": "你的公众号 AppSecret"
+  "skills": {
+    "entries": {
+      "wemp-operator": {
+        "env": {
+          "WEMP_APP_ID": "你的公众号 AppID",
+          "WEMP_APP_SECRET": "你的公众号 AppSecret"
+        }
+      }
     }
   }
 }
